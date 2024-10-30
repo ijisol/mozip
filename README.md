@@ -86,7 +86,7 @@ Returns a `Promise` that resolves after compressing completed and data pushed to
 
 The `name` parameter would be a file name. Absolute paths are not allowed.
 
-Data become compressed by default. To store without compression, set `compress` in `options` to `false`.
+Data become compressed by default. To store without compression, set the `compress` property in the `options` parameter to `false`.
 
 If the `lastModified` property of the `options` parameter is undefined, it would be a moment when compressing started, according to the ZIP specification. If a `number`, it must be an unsigned 32-bit integer that represents MS-DOS date and time. Otherwise, it would be converted by the `dateToDosDateTime(date)` function.
 
