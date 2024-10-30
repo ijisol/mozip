@@ -54,7 +54,7 @@ await writing;
 
 ## Install
 
-Mozip is published in the npm registry as [mozip]. Install using the npm CLI (`npm install mozip`), or download a tarball or a ZIP file (created by this, of course) from [the latest release].
+Mozip is published in the npm registry as [mozip]. Install using your package manager (e.g. `npm install mozip`), or download a tarball/ZIP file from [the latest release].
 
 [mozip]: https://www.npmjs.com/package/mozip
 [the latest release]: https://github.com/ijisol/mozip/releases
@@ -75,20 +75,20 @@ Parameters:
 
 - `name`: `string`
 - `data`: `TypedArray` (includes `Buffer` of the `node:buffer`) or `DataView`
-- `options`: (optional) any object that implements below properties:
+- `options`: (optional) object that implements below properties:
   - `compress`: (optional) `boolean`
   - `lastModified`: (optional) `Date` or `number`
-  - `zlib`: (optional) any object that implements the [`Options`] interface of the `node:zlib`
+  - `zlib`: (optional) object that implements the [`Options`] interface of the `node:zlib`
 
 [`Options`]: https://nodejs.org/api/zlib.html#class-options
 
 Returns a `Promise` that resolves after compressing completed and data pushed to the stream.
 
+The `name` property would be a file name. Absolute paths are not allowed.
+
 Data become compressed by default. To store without compression, set `compress` in `options` to `false`.
 
-If `lastModified` in `options` is not set, it becomes when compressing started, according to the ZIP specification.
-
-If `lastModified` is a `number`, it must be an unsigned 32-bit integer that represents MS-DOS date and time. The `dateToDosDateTime(date)` function is an utility for this.
+If the `lastModified` property of the `options` parameter is undefined, it would be a moment when compressing started, according to the ZIP specification. If a `number`, it must be an unsigned 32-bit integer that represents MS-DOS date and time. Otherwise, it would be converted by the `dateToDosDateTime(date)` function.
 
 ### `ZipStream.prototype.end()`
 
@@ -100,7 +100,7 @@ Returns a `Promise` that fulfills with a `number`, total byte length of the gene
 
 Parameters:
 
-- `date`: `Date` or any object that implements below methods:
+- `date`: `Date` or object that implements below methods:
   - `getFullYear()`
   - `getMonth()`
   - `getDate()`
