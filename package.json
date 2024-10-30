@@ -17,9 +17,6 @@
     "type": "git",
     "url": "git+https://github.com/ijisol/mozip.git"
   },
-  "scripts": {
-    "test": "node test.js"
-  },
   "engines": {
     "node": ">=22.2.0 || ^20.15.0"
   }
