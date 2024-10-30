@@ -1,6 +1,6 @@
 {
   "name": "mozip",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Minimal library for generating ZIP files using Promises",
   "keywords": [
     "zip",
@@ -12,7 +12,11 @@
   "homepage": "https://github.com/ijisol/mozip",
   "license": "MIT",
   "type": "module",
-  "exports": "./index.js",
+  "exports": {
+    "import": "./index.js",
+    "module-sync": "./index.js",
+    "require": "./index.cjs"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/ijisol/mozip.git"
