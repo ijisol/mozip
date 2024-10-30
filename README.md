@@ -84,7 +84,7 @@ Parameters:
 
 Returns a `Promise` that resolves after compressing completed and data pushed to the stream.
 
-The `name` property would be a file name. Absolute paths are not allowed.
+The `name` parameter would be a file name. Absolute paths are not allowed.
 
 Data become compressed by default. To store without compression, set `compress` in `options` to `false`.
 
