@@ -1,4 +1,3 @@
-import { Buffer } from 'node:buffer';
 import { readFile, stat, writeFile } from 'node:fs/promises';
 import { ZipStream, dateToDosDateTime } from './index.js';
 
@@ -14,16 +13,18 @@ let errored = 0;
 zip.writeFile('deflated-empty', empty);
 zip.writeFile('uni♥/code♦', empty, { lastModified: dateToDosDateTime(date) });
 
+const max = new Uint8Array(0xffffffff);
+zip.writeFile('too-large', max, { zlib: { level: 0 } }).catch((err) => {
+  // The error must be occur after compressing
+  if (err.message !== 'The compressed size of file exceeds 0xFFFFFFFF bytes') throw err;
+  ++errored;
+});
 zip.writeFile('uni♥/code♦', empty).catch((err) => {
   if (err.message !== 'Duplicated file name') throw err;
   ++errored;
 });
 zip.writeFile('dir/', empty).catch((err) => {
   if (err.message !== 'Invalid file name') throw err;
-  ++errored;
-});
-zip.writeFile('too-large', Buffer.allocUnsafe(0xffffffff + 1)).catch((err) => {
-  if (err.message !== 'Cannot add a file larger than 0xFFFFFFFF bytes') throw err;
   ++errored;
 });
 
