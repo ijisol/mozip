@@ -19,6 +19,7 @@ const options = {
 await Promise.all([
   'LICENSE.txt',
   'README.md',
+  'index.cjs',
   'index.js',
   'package.json',
 ].map(async (name) => {
