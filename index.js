@@ -14,8 +14,8 @@ const MAX16 = 0xffff;
 const MAX32 = 0xffffffff;
 const METHOD_DEFLATE = 8;
 const METHOD_STORE   = 0;
-const PATTERN_UTF8  = /[^ -~]/; // Out of printable ASCII range
 const PATTERN_DRIVE = /^[A-Za-z]:/;
+const PATTERN_UTF8  = /[^ -~]/; // Out of printable ASCII range
 const VERSION_DEFLATE = 20; // version 2.0
 const VERSION_UTF8    = 63; // version 6.3
 const VERSION_MADE_BY = 63; // MS-DOS, version 6.3
@@ -30,7 +30,7 @@ const deflateRawAsync = promisify(deflateRaw);
 /**
  * @typedef ZipEntry
  * @property {number} byteOffset
- * @property {number} crc32
+ * @property {number} crc
  * @property {number} flag
  * @property {number} lastModified
  * @property {number} method
@@ -114,7 +114,7 @@ class ZipStream extends Transform {
       throw new RangeError('Invalid date/time');
     }
 
-    const checksum = crc32(data);
+    const crc = crc32(data);
     let sizeCompressed = sizeUncompressed;
     names.add(name); // Add before asynchronous task
     if (compress) {
@@ -141,15 +141,15 @@ class ZipStream extends Transform {
 
     /** @type {ZipEntry} */
     const entry = {
-      byteOffset: byteOffset,
-      crc32: checksum,
+      byteOffset,
+      crc,
       flag: utf8 ? FLAG_UTF8 : 0,
       lastModified: dosDateTime,
       method: compress ? METHOD_DEFLATE : METHOD_STORE,
       name: nameBytes,
-      nameLength: nameLength,
-      sizeCompressed: sizeCompressed,
-      sizeUncompressed: sizeUncompressed,
+      nameLength,
+      sizeCompressed,
+      sizeUncompressed,
       version: utf8 ? VERSION_UTF8 : VERSION_DEFLATE,
     };
     this.entries.push(entry);
@@ -175,12 +175,12 @@ class ZipStream extends Transform {
  *                getMonth   : () => number,
  *                getDate    : () => number,
  *                getHours   : () => number,
- *                getMinutes : () => number }} date
+ *                getMinutes : () => number,
+ *                getSeconds : () => number }} date
  * @returns {number} Unsigned 32-bit integer represents MS-DOS date and time
  */
 function dateToDosDateTime(date) {
-  // DO NOT use bitwise operators; overflow occurs.
-  return (
+  return ( // DO NOT use bitwise operators; overflow occurs.
     ((date.getFullYear() - 1980) * (2 ** 25)) +
     ((date.getMonth() + 1) * (2 ** 21)) +
     (date.getDate() * (2 ** 16)) +
@@ -215,7 +215,7 @@ function normalizeFilename(name) {
  * @param {TypedArray|DataView} data
  */
 function writeLocalFileHeaderAndData(stream, entry, data) {
-  const { version, flag, method, lastModified, crc32, sizeCompressed,
+  const { version, flag, method, lastModified, crc, sizeCompressed,
           sizeUncompressed, nameLength, name } = entry;
   const header = Buffer.allocUnsafe(FIXED_LFH_SIZE);
   header.writeUint32LE(0x04034b50      ,  0); // local file header signature
@@ -223,7 +223,7 @@ function writeLocalFileHeaderAndData(stream, entry, data) {
   header.writeUint16LE(flag            ,  6); // general perpose bit flag
   header.writeUint16LE(method          ,  8); // compression method
   header.writeUint32LE(lastModified    , 10); // last mod file date/time
-  header.writeUint32LE(crc32           , 14); // crc-32
+  header.writeUint32LE(crc             , 14); // crc-32
   header.writeUint32LE(sizeCompressed  , 18); // compressed size
   header.writeUint32LE(sizeUncompressed, 22); // uncompressed size
   header.writeUint16LE(nameLength      , 26); // file name length
@@ -239,7 +239,7 @@ function writeLocalFileHeaderAndData(stream, entry, data) {
  * @param {ZipEntry} entry
  */
 function flushCentralDirHeader(stream, entry) {
-  const { version, flag, method, lastModified, crc32, sizeCompressed,
+  const { version, flag, method, lastModified, crc, sizeCompressed,
           sizeUncompressed, nameLength, name, byteOffset } = entry;
   const header = Buffer.allocUnsafe(FIXED_CDH_SIZE);
   header.writeUint32LE(0x02014b50      ,  0); // central file header signature
@@ -248,7 +248,7 @@ function flushCentralDirHeader(stream, entry) {
   header.writeUint16LE(flag            ,  8); // general perpose bit flag
   header.writeUint16LE(method          , 10); // compression method
   header.writeUint32LE(lastModified    , 12); // last mod file date/time
-  header.writeUint32LE(crc32           , 16); // crc-32
+  header.writeUint32LE(crc             , 16); // crc-32
   header.writeUint32LE(sizeCompressed  , 20); // compressed size
   header.writeUint32LE(sizeUncompressed, 24); // uncompressed size
   header.writeUint16LE(nameLength      , 28); // file name length
