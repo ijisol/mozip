@@ -15,10 +15,9 @@ const MAX32 = 0xffffffff;
 const METHOD_DEFLATE = 8;
 const METHOD_STORE   = 0;
 const PATTERN_DRIVE = /^[A-Za-z]:/;
-const PATTERN_UTF8  = /[^ -~]/; // Out of printable ASCII range
-const VERSION_DEFLATE = 20; // version 2.0
-const VERSION_UTF8    = 63; // version 6.3
-const VERSION_MADE_BY = 63; // MS-DOS, version 6.3
+const VERSION_DEFLATE = 20; // v2.0
+const VERSION_STORE   = 10; // v1.0
+const VERSION_MADE_BY = 63; // MS-DOS, v6.3
 
 const deflateRawAsync = promisify(deflateRaw);
 
@@ -94,8 +93,7 @@ class ZipStream extends Transform {
       throw new Error('Duplicated file name');
     }
 
-    const utf8 = PATTERN_UTF8.test(name);
-    const nameBytes = Buffer.from(name, utf8 ? 'utf8' : 'latin1');
+    const nameBytes = Buffer.from(name, 'utf8');
     const nameLength = nameBytes.byteLength;
     const sizeUncompressed = data.byteLength;
     if (nameLength > MAX16) {
@@ -143,14 +141,14 @@ class ZipStream extends Transform {
     const entry = {
       byteOffset,
       crc,
-      flag: utf8 ? FLAG_UTF8 : 0,
+      flag: FLAG_UTF8,
       lastModified: dosDateTime,
       method: compress ? METHOD_DEFLATE : METHOD_STORE,
       name: nameBytes,
       nameLength,
       sizeCompressed,
       sizeUncompressed,
-      version: utf8 ? VERSION_UTF8 : VERSION_DEFLATE,
+      version: compress ? VERSION_DEFLATE: VERSION_STORE,
     };
     this.entries.push(entry);
     try {

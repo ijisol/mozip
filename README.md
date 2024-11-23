@@ -9,7 +9,7 @@ Mozip is for those who don't need any complex things and just want to pack a few
 - No dependencies except Node.js built-in modules.
 - Outputs as a Node.js stream.
 - Provides Promise-based API.
-- Supports UTF-8 file names.
+- Uses UTF-8 file names.
 - Supports store (no compression) and deflate compression methods.
 - Supports setting zlib options: compression level, chunk size, etc.
 - Does NOT support comments.
@@ -47,8 +47,7 @@ await zip.writeFile('../invalid-filename/', data).catch(() => {
   console.warn('The stream was not destroyed. Just ignore it.');
 });
 
-// Must be ended
-zip.end();
+zip.end(); // Must be ended
 await writing;
 ```
 
