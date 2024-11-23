@@ -1,3 +1,8 @@
+/**
+ * @typedef {import('./types.d.js').TypedArray} TypedArray
+ * @typedef {import('./types.d.js').ZipEntry} ZipEntry
+ */
+
 import { Buffer } from 'node:buffer';
 import { normalize } from 'node:path/posix';
 import { Transform } from 'node:stream';
@@ -20,25 +25,6 @@ const VERSION_STORE   = 10; // v1.0
 const VERSION_MADE_BY = 63; // MS-DOS, v6.3
 
 const deflateRawAsync = promisify(deflateRaw);
-
-/**
- * @typedef {Int8Array|Uint8Array|Uint8ClampedArray|Int16Array|Uint16Array|Int32Array|Uint32Array|
- *           BigInt64Array|BigUint64Array|Float32Array|Float64Array} TypedArray
- */
-
-/**
- * @typedef ZipEntry
- * @property {number} byteOffset
- * @property {number} crc
- * @property {number} flag
- * @property {number} lastModified
- * @property {number} method
- * @property {Buffer} name
- * @property {number} nameLength
- * @property {number} sizeCompressed
- * @property {number} sizeUncompressed
- * @property {number} version
- */
 
 class ZipStream extends Transform {
   /** @type {ZipEntry[]} */

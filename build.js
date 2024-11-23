@@ -22,6 +22,7 @@ await Promise.all([
   'index.cjs',
   'index.js',
   'package.json',
+  'types.d.js',
 ].map(async (name) => {
   const data = await readFile(name);
   return zip.writeFile(`package/${name}`, data, options);
