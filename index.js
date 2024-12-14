@@ -1,13 +1,22 @@
-/**
- * @typedef {import('./types.d.js').TypedArray} TypedArray
- * @typedef {import('./types.d.js').ZipEntry} ZipEntry
- */
-
 import { Buffer } from 'node:buffer';
 import { normalize } from 'node:path/posix';
 import { Transform } from 'node:stream';
 import { promisify } from 'node:util';
 import { crc32, deflateRaw } from 'node:zlib';
+
+/**
+ * @typedef ZipEntry
+ * @property {number} byteOffset
+ * @property {number} crc
+ * @property {number} flag
+ * @property {number} lastModified
+ * @property {number} method
+ * @property {Buffer} name
+ * @property {number} nameLength
+ * @property {number} sizeCompressed
+ * @property {number} sizeUncompressed
+ * @property {number} version
+ */
 
 const DATETIME_MAX = 0xff9fbf7d; // 2107-12-31T23:59:58
 const DATETIME_MIN = 0x00210000; // 1980-01-01T00:00:00
@@ -60,12 +69,6 @@ class ZipStream extends Transform {
     callback(null, chunk); // Pass through
   }
 
-  /**
-   * @param {string} name
-   * @param {TypedArray|DataView} data
-   * @param {{ compress: boolean|undefined, lastModified: number|Date|undefined, zlib }} [options]
-   * @returns {Promise<void>}
-   */
   async writeFile(name, data, options = {}) {
     if (typeof name !== 'string') {
       throw new TypeError('The file name is not a string');
@@ -144,9 +147,6 @@ class ZipStream extends Transform {
     }
   }
 
-  /**
-   * @returns {Promise<number>} Fulfills with total byte length of the generated file
-   */
   async end() {
     await Promise.all(this.promises);
     super.end();
@@ -154,15 +154,6 @@ class ZipStream extends Transform {
   }
 }
 
-/**
- * @param {Date|{ getFullYear: () => number,
- *                getMonth   : () => number,
- *                getDate    : () => number,
- *                getHours   : () => number,
- *                getMinutes : () => number,
- *                getSeconds : () => number }} date
- * @returns {number} Unsigned 32-bit integer represents MS-DOS date and time
- */
 function dateToDosDateTime(date) {
   return ( // DO NOT use bitwise operators; overflow occurs.
     ((date.getFullYear() - 1980) * (2 ** 25)) +
@@ -196,7 +187,7 @@ function normalizeFilename(name) {
 /**
  * @param {ZipStream} stream
  * @param {ZipEntry} entry
- * @param {TypedArray|DataView} data
+ * @param {ArrayBufferView|DataView} data
  */
 function writeLocalFileHeaderAndData(stream, entry, data) {
   const { version, flag, method, lastModified, crc, sizeCompressed,

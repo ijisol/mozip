@@ -1,8 +1,3 @@
-/**
- * @typedef {import('./types.d.js').TypedArray} TypedArray
- * @typedef {import('./types.d.js').ZipEntry} ZipEntry
- */
-
 'use strict';
 
 const { Buffer } = require('node:buffer');
