@@ -8,7 +8,6 @@ import { crc32, deflateRaw } from 'node:zlib';
  * @typedef ZipEntry
  * @property {number} byteOffset
  * @property {number} crc
- * @property {number} flag
  * @property {number} lastModified
  * @property {number} method
  * @property {Buffer} name
@@ -18,19 +17,19 @@ import { crc32, deflateRaw } from 'node:zlib';
  * @property {number} version
  */
 
-const DATETIME_MAX = 0xff9fbf7d; // 2107-12-31T23:59:58
 const DATETIME_MIN = 0x00210000; // 1980-01-01T00:00:00
+const DATETIME_MAX = 0xff9fbf7d; // 2107-12-31T23:59:58
 const FIXED_LFH_SIZE   = 30;
 const FIXED_CDH_SIZE   = 46;
 const FIXED_EOCDR_SIZE = 22;
 const FLAG_UTF8 = 2 ** 11; // Set bit 11
 const MAX16 = 0xffff;
 const MAX32 = 0xffffffff;
-const METHOD_DEFLATE = 8;
 const METHOD_STORE   = 0;
+const METHOD_DEFLATE = 8;
 const PATTERN_DRIVE = /^[A-Za-z]:/;
-const VERSION_DEFLATE = 20; // v2.0
 const VERSION_STORE   = 10; // v1.0
+const VERSION_DEFLATE = 20; // v2.0
 const VERSION_MADE_BY = 63; // MS-DOS, v6.3
 
 const deflateRawAsync = promisify(deflateRaw);
@@ -82,7 +81,7 @@ class ZipStream extends Transform {
       throw new Error('Duplicated file name');
     }
 
-    const nameBytes = Buffer.from(name, 'utf8');
+    const nameBytes = Buffer.from(name);
     const nameLength = nameBytes.byteLength;
     const sizeUncompressed = data.byteLength;
     if (nameLength > MAX16) {
@@ -131,7 +130,6 @@ class ZipStream extends Transform {
     const entry = {
       byteOffset,
       crc,
-      flag: FLAG_UTF8,
       lastModified: dosDateTime,
       method: compress ? METHOD_DEFLATE : METHOD_STORE,
       name: nameBytes,
@@ -194,12 +192,12 @@ function normalizeFilename(name) {
  * @param {ArrayBufferView|DataView} data
  */
 function writeLocalFileHeaderAndData(stream, entry, data) {
-  const { version, flag, method, lastModified, crc, sizeCompressed,
+  const { version, method, lastModified, crc, sizeCompressed,
           sizeUncompressed, nameLength, name } = entry;
   const header = Buffer.allocUnsafe(FIXED_LFH_SIZE);
   header.writeUint32LE(0x04034b50      ,  0); // local file header signature
   header.writeUint16LE(version         ,  4); // version needed to extract
-  header.writeUint16LE(flag            ,  6); // general perpose bit flag
+  header.writeUint16LE(FLAG_UTF8       ,  6); // general perpose bit flag
   header.writeUint16LE(method          ,  8); // compression method
   header.writeUint32LE(lastModified    , 10); // last mod file date/time
   header.writeUint32LE(crc             , 14); // crc-32
@@ -218,13 +216,13 @@ function writeLocalFileHeaderAndData(stream, entry, data) {
  * @param {ZipEntry} entry
  */
 function flushCentralDirHeader(stream, entry) {
-  const { version, flag, method, lastModified, crc, sizeCompressed,
+  const { version, method, lastModified, crc, sizeCompressed,
           sizeUncompressed, nameLength, name, byteOffset } = entry;
   const header = Buffer.allocUnsafe(FIXED_CDH_SIZE);
   header.writeUint32LE(0x02014b50      ,  0); // central file header signature
   header.writeUint16LE(VERSION_MADE_BY ,  4); // version made by
   header.writeUint16LE(version         ,  6); // version needed to extract
-  header.writeUint16LE(flag            ,  8); // general perpose bit flag
+  header.writeUint16LE(FLAG_UTF8       ,  8); // general perpose bit flag
   header.writeUint16LE(method          , 10); // compression method
   header.writeUint32LE(lastModified    , 12); // last mod file date/time
   header.writeUint32LE(crc             , 16); // crc-32
