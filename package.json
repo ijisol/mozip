@@ -10,6 +10,10 @@
     "promise"
   ],
   "homepage": "https://github.com/ijisol/mozip",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ijisol/mozip.git"
+  },
   "license": "MIT",
   "type": "module",
   "exports": {
@@ -17,11 +21,7 @@
     "module-sync": "./index.js",
     "require": "./index.cjs"
   },
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/ijisol/mozip.git"
-  },
   "engines": {
-    "node": ">=22.2.0 || ^20.15.0"
+    "node": ">=22.2.0"
   }
 }

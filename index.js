@@ -101,14 +101,14 @@ class ZipStream extends Transform {
       throw new RangeError('Invalid date/time');
     }
 
+    const { promise, resolve } = Promise.withResolvers();
     const crc = crc32(data);
     let sizeCompressed = sizeUncompressed;
     names.add(name); // Add before asynchronous task
     if (compress) {
-      const compressing = deflateRawAsync(data, zlib);
-      this.promises.add(compressing);
+      this.promises.add(promise);
       try {
-        data = await compressing;
+        data = await deflateRawAsync(data, zlib);
         sizeCompressed = data.byteLength;
         if (sizeCompressed > MAX32) {
           throw new RangeError('The compressed size of file exceeds 0xFFFFFFFF bytes');
@@ -116,7 +116,8 @@ class ZipStream extends Transform {
       } catch (err) {
         // If this error catched, do not throw again when `end()` called.
         names.delete(name);
-        this.promises.delete(compressing);
+        this.promises.delete(promise);
+        resolve();
         throw err;
       }
     }
@@ -139,12 +140,15 @@ class ZipStream extends Transform {
       sizeUncompressed,
       version: compress ? VERSION_DEFLATE: VERSION_STORE,
     };
+
     this.entries.push(entry);
     try {
       writeLocalFileHeaderAndData(this, entry, data);
     } catch (err) {
+      resolve();
       this.emit('error', err);
     }
+    resolve();
   }
 
   async end() {
