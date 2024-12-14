@@ -20,12 +20,11 @@ await Promise.all([
   'LICENSE.txt',
   'README.md',
   'index.cjs',
+  'index.d.ts',
   'index.js',
   'package.json',
-  'types.d.js',
 ].map(async (name) => {
-  const data = await readFile(name);
-  return zip.writeFile(`package/${name}`, data, options);
+  zip.writeFile(`package/${name}`, await readFile(name), options);
 }));
 
 zip.end();
