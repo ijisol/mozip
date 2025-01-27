@@ -69,7 +69,7 @@ Public Instance Members:
 
 Inherits the [`Transform` class of the `node:stream` module](https://nodejs.org/api/stream.html#class-streamtransform).
 
-The `validator` parameter would be the `validator(name)` instance method. If the parameter is undefined, in default, the method validates only minimum restrictions from the ZIP specification and deny duplicates. For reference, the specification requires that the file name MUST NOT contain a drive or device letter, a leading slash, or a backslash (`\`).
+The `validator` parameter would be the `validator(name)` instance method. If the parameter is undefined, in default, the method validates only minimum restrictions from the ZIP specification and denies duplicates. For reference, the specification requires that the file name MUST NOT contain a drive or device letter, a leading slash, or a backslash (`\`).
 
 Customizing the file name validator is for more complicated restrictions like [EPUB 3](https://www.w3.org/TR/epub-33/#sec-container-filenames). In the `validator(name)` method, `this` would be its `ZipStream` instance. So you can use `this.names` for getting file names already in entries.
 
