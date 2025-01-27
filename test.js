@@ -23,7 +23,7 @@ zip.writeFile('uni♥/code♦', empty).catch((err) => {
   if (err.message !== 'Duplicated file name') throw err;
   ++errored;
 });
-zip.writeFile('dir/', empty).catch((err) => {
+zip.writeFile('/absolute', empty).catch((err) => {
   if (err.message !== 'Invalid file name') throw err;
   ++errored;
 });
@@ -35,7 +35,7 @@ zip.writeFile('stored', buffer, { compress: false, lastModified: date });
 
 const bytesCounted = await zip.end();
 if (errored !== 3) {
-  throw new Error('Errors never catched');
+  throw new Error('Some errors never catched');
 }
 
 await writing;

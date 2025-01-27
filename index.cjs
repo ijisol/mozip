@@ -1,7 +1,6 @@
 'use strict';
 
 const { Buffer } = require('node:buffer');
-const { normalize } = require('node:path/posix');
 const { Transform } = require('node:stream');
 const { promisify } = require('node:util');
 const { crc32, deflateRaw } = require('node:zlib');

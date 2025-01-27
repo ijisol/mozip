@@ -1,5 +1,4 @@
 import { Buffer } from 'node:buffer';
-import { normalize } from 'node:path/posix';
 import { Transform } from 'node:stream';
 import { promisify } from 'node:util';
 import { crc32, deflateRaw } from 'node:zlib';
@@ -41,8 +40,9 @@ class ZipStream extends Transform {
   names = new Set();
   promises = new Set();
 
-  constructor() {
-    super(); // No params
+  constructor(validator = validateName) {
+    super();
+    this.validator = validator;
   }
 
   _flush(callback) {
@@ -69,16 +69,12 @@ class ZipStream extends Transform {
   }
 
   async writeFile(name, data, options = {}) {
+    name = this.validator(name);
+
     if (typeof name !== 'string') {
       throw new TypeError('The file name is not a string');
     } else if (!ArrayBuffer.isView(data)) {
       throw new TypeError('The file data is not a TypedArray or DataView');
-    }
-
-    const { names } = this;
-    name = normalizeFilename(name);
-    if (names.has(name)) {
-      throw new Error('Duplicated file name');
     }
 
     const nameBytes = Buffer.from(name);
@@ -91,18 +87,21 @@ class ZipStream extends Transform {
     }
 
     const { compress = true, lastModified = new Date(), zlib } = options;
-    const dosDateTime = (typeof lastModified === 'number') ?
-                        lastModified :
-                        dateToDosDateTime(lastModified);
-    if (!Number.isInteger(dosDateTime) ||
-        (dosDateTime < DATETIME_MIN) ||
-        (dosDateTime > DATETIME_MAX)) {
+    const dateTime = (typeof lastModified === 'number') ?
+                     lastModified :
+                     dateToDosDateTime(lastModified);
+
+    if (!Number.isInteger(dateTime) ||
+        (dateTime < DATETIME_MIN) ||
+        (dateTime > DATETIME_MAX)) {
       throw new RangeError('Invalid date/time');
     }
 
+    const { entries, names } = this;
     const { promise, resolve } = Promise.withResolvers();
     const crc = crc32(data);
     let sizeCompressed = sizeUncompressed;
+
     names.add(name); // Add before asynchronous task
     if (compress) {
       this.promises.add(promise);
@@ -121,26 +120,24 @@ class ZipStream extends Transform {
       }
     }
 
-    const { byteOffset } = this;
-    if (byteOffset > MAX32) {
-      this.emit('error', new RangeError('The offset of the local header exceeds 0xFFFFFFFF bytes'));
-    }
-
-    /** @type {ZipEntry} */
-    const entry = {
-      byteOffset,
-      crc,
-      lastModified: dosDateTime,
-      method: compress ? METHOD_DEFLATE : METHOD_STORE,
-      name: nameBytes,
-      nameLength,
-      sizeCompressed,
-      sizeUncompressed,
-      version: compress ? VERSION_DEFLATE: VERSION_STORE,
-    };
-
-    this.entries.push(entry);
     try {
+      const { byteOffset } = this;
+      if (byteOffset > MAX32) {
+        throw new RangeError('The offset of the local header exceeds 0xFFFFFFFF bytes');
+      }
+      /** @type {ZipEntry} */
+      const entry = {
+        byteOffset,
+        crc,
+        lastModified: dateTime,
+        method: compress ? METHOD_DEFLATE : METHOD_STORE,
+        name: nameBytes,
+        nameLength,
+        sizeCompressed,
+        sizeUncompressed,
+        version: compress ? VERSION_DEFLATE: VERSION_STORE,
+      };
+      entries.push(entry);
       writeLocalFileHeaderAndData(this, entry, data);
     } catch (err) {
       resolve();
@@ -168,20 +165,19 @@ function dateToDosDateTime(date) {
 }
 
 /**
+ * @this ZipStream
  * @param {string} name
  * @returns {string}
  */
-function normalizeFilename(name) {
-  name = normalize(name.replaceAll('\\', '/'));
+function validateName(name) {
   if (
-    (name === '.') ||         // No filename
-    (name === '..') ||        // Parent Directory
-    name.startsWith('/') ||   // Absolute Path
-    name.endsWith('/') ||     // Directory
-    name.startsWith('../') || // Parent Directory
-    PATTERN_DRIVE.test(name)  // Drive letter
+    name.startsWith('/') ||  // Starts with a slash
+    name.includes('\\') ||   // Contains backslash
+    PATTERN_DRIVE.test(name) // Starts with a drive letter
   ) {
     throw new Error('Invalid file name');
+  } else if (this.names.has(name)) {
+    throw new Error('Duplicated file name');
   }
   return name;
 }
