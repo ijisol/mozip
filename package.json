@@ -1,6 +1,6 @@
 {
   "name": "mozip",
-  "version": "3.0.0",
+  "version": "3.0.1",
   "description": "Minimal library for generating ZIP files using Promises",
   "keywords": [
     "zip",
