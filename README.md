@@ -86,7 +86,7 @@ Parameters:
   - `lastModified`: (optional) `Date`, or variable that could be the `date` parameter for the `dateToDosDateTime(date)` function
   - `zlib`: (optional) object that implements the [`Options` interface of the `node:zlib` module](https://nodejs.org/api/zlib.html#class-options)
 
-Returns a `Promise` that resolves after compressing completed and data pushed to the stream.
+Returns a `Promise` that is resolved after compressing completed.
 
 The `name` parameter would be a file name. It would be validated by the `validator(name)` method of the `ZipStream` instance.
 
