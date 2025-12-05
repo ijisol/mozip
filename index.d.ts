@@ -17,9 +17,11 @@ export class ZipStream extends Transform {
    * File names in entries.
    */
   names: Set<string>;
-  validator: (name: string) => string;
 
-  constructor(validator?: (name: string) => string);
+  /**
+   * Validate a file name.
+   */
+  validateName(name: string): string;
 
   /**
    * Add a file to entries and push its data to the stream.

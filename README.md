@@ -26,7 +26,7 @@ const writing = writeFile('example.zip', zip);
 
 // Add a file into the stream
 // Can set compression level
-const data = (new TextEncoder()).encode('Hello, World!\n');
+const data = new TextEncoder().encode('Hello, World!\n');
 zip.writeFile('uni♥code♦.txt', data);
 zip.writeFile('best-compression.txt', data, { zlib: { level: 9 } });
 zip.writeFile('no-compression.txt', data, { compress: false });
@@ -56,22 +56,27 @@ Mozip is published in the npm registry as [mozip](https://www.npmjs.com/package/
 
 ## API
 
-### `new ZipStream([validator])`
-
-Parameters:
-
-- `validator`: (optional) `Function` for validating file names
+### `new ZipStream()`
 
 Public Instance Members:
 
 - `names`: `Set` of file names in entries
-- `validator(name)`: `Function` that returns a `string`, normalized and validated file name
 
 Inherits the [`Transform` class of the `node:stream` module](https://nodejs.org/api/stream.html#class-streamtransform).
 
-The `validator` parameter would be the `validator(name)` instance method. If the parameter is undefined, in default, the method validates only minimum restrictions from the ZIP specification and denies duplicates. For reference, the specification requires that the file name MUST NOT contain a drive or device letter, a leading slash, or a backslash (`\`).
+### `ZipStream.prototype.validateFile(name)`
 
-Customizing the file name validator is for more complicated restrictions like [EPUB 3](https://www.w3.org/TR/epub-33/#sec-container-filenames). In the `validator(name)` method, `this` would be its `ZipStream` instance. So you can use `this.names` for getting file names already in entries.
+Validates a file name.
+
+Parameters:
+
+- `name`: `string`
+
+Returns a `string`.
+
+It validates only minimum restrictions from the ZIP specification and denies duplicates. For reference, the specification requires that the file name MUST NOT contain a drive or device letter, a leading slash, or a backslash (`\`).
+
+For more complicated restrictions like [EPUB 3](https://www.w3.org/TR/epub-33/#sec-container-filenames), override this method. You can use `this.names` for getting file names already in entries.
 
 ### `ZipStream.prototype.writeFile(name, data[, options])`
 

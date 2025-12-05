@@ -3,19 +3,6 @@ import { Transform } from 'node:stream';
 import { promisify } from 'node:util';
 import { crc32, deflateRaw } from 'node:zlib';
 
-/**
- * @typedef ZipEntry
- * @property {number} byteOffset
- * @property {number} crc
- * @property {number} lastModified
- * @property {number} method
- * @property {Buffer} name
- * @property {number} nameLength
- * @property {number} sizeCompressed
- * @property {number} sizeUncompressed
- * @property {number} version
- */
-
 const DATETIME_MIN = 0x00210000; // 1980-01-01T00:00:00
 const DATETIME_MAX = 0xff9fbf7d; // 2107-12-31T23:59:58
 const FIXED_LFH_SIZE   = 30;
@@ -34,16 +21,11 @@ const VERSION_MADE_BY = 63; // MS-DOS, v6.3
 const deflateRawAsync = promisify(deflateRaw);
 
 class ZipStream extends Transform {
-  /** @type {ZipEntry[]} */
-  entries = [];
-  byteOffset = 0;
   names = new Set();
-  promises = new Set();
 
-  constructor(validator = validateName) {
-    super();
-    this.validator = validator;
-  }
+  byteOffset = 0;
+  entries = [];
+  queue = Promise.resolve();
 
   _flush(callback) {
     const { byteOffset, entries } = this;
@@ -57,10 +39,10 @@ class ZipStream extends Transform {
       for (let i = 0; i < totalEntries; ++i) {
         flushCentralDirHeader(this, entries[i]);
       }
-      flushEndOfCentralDirRecord(this, byteOffset);
+      flushEndOfCentralDirRecord(this, byteOffset, totalEntries);
       callback(null);
-    } catch (err) {
-      this.emit('error', err);
+    } catch (error) {
+      this.emit('error', error);
     }
   }
 
@@ -68,64 +50,78 @@ class ZipStream extends Transform {
     callback(null, chunk); // Pass through
   }
 
-  async writeFile(name, data, options = {}) {
-    name = this.validator(name);
+  validateName(name) {
+    if (
+      name.startsWith('/') ||  // Starts with a slash
+      name.includes('\\') ||   // Contains backslash
+      PATTERN_DRIVE.test(name) // Starts with a drive letter
+    ) {
+      throw new Error('Invalid file name');
+    } else if (this.names.has(name)) {
+      throw new Error('Duplicated file name');
+    }
+    return name;
+  }
 
+  async writeFile(name, data, options = {}) {
     if (typeof name !== 'string') {
       throw new TypeError('The file name is not a string');
     } else if (!ArrayBuffer.isView(data)) {
       throw new TypeError('The file data is not a TypedArray or DataView');
     }
 
+    name = this.validateName(name);
     const nameBytes = Buffer.from(name);
     const nameLength = nameBytes.byteLength;
-    const sizeUncompressed = data.byteLength;
     if (nameLength > MAX16) {
       throw new RangeError('Cannot set a file name longer than 0xFFFF bytes');
-    } else if (sizeUncompressed > MAX32) {
+    }
+
+    const sizeUncompressed = data.byteLength;
+    if (sizeUncompressed > MAX32) {
       throw new RangeError('Cannot add a file larger than 0xFFFFFFFF bytes');
     }
 
     const { compress = true, lastModified = new Date(), zlib } = options;
-    const dateTime = (typeof lastModified === 'number') ?
-                     lastModified :
-                     dateToDosDateTime(lastModified);
-
-    if (!Number.isInteger(dateTime) ||
-        (dateTime < DATETIME_MIN) ||
-        (dateTime > DATETIME_MAX)) {
+    const calculated = (typeof lastModified === 'number');
+    const dateTime = calculated ? lastModified : dateToDosDateTime(lastModified);
+    if (
+      !Number.isInteger(dateTime) ||
+      (dateTime < DATETIME_MIN) || (dateTime > DATETIME_MAX)
+    ) {
       throw new RangeError('Invalid date/time');
     }
 
-    const { entries, names } = this;
     const { promise, resolve } = Promise.withResolvers();
+    const { names, queue } = this;
     const crc = crc32(data);
     let sizeCompressed = sizeUncompressed;
 
-    names.add(name); // Add before asynchronous task
+    // Do before asynchronous task
+    this.queue = queue.then(() => promise);
+    names.add(name);
+
     if (compress) {
-      this.promises.add(promise);
       try {
         data = await deflateRawAsync(data, zlib);
         sizeCompressed = data.byteLength;
         if (sizeCompressed > MAX32) {
           throw new RangeError('The compressed size of file exceeds 0xFFFFFFFF bytes');
         }
-      } catch (err) {
+      } catch (error) {
         // If this error catched, do not throw again when `end()` called.
         names.delete(name);
-        this.promises.delete(promise);
         resolve();
-        throw err;
+        throw error;
       }
     }
 
+    await queue;
     try {
       const { byteOffset } = this;
       if (byteOffset > MAX32) {
         throw new RangeError('The offset of the local header exceeds 0xFFFFFFFF bytes');
       }
-      /** @type {ZipEntry} */
       const entry = {
         byteOffset,
         crc,
@@ -137,17 +133,17 @@ class ZipStream extends Transform {
         sizeUncompressed,
         version: compress ? VERSION_DEFLATE: VERSION_STORE,
       };
-      entries.push(entry);
+      this.entries.push(entry);
       writeLocalFileHeaderAndData(this, entry, data);
-    } catch (err) {
+    } catch (error) {
       resolve();
-      this.emit('error', err);
+      this.emit('error', error);
     }
     resolve();
   }
 
   async end() {
-    await Promise.all(this.promises);
+    await this.queue;
     super.end();
     return this.byteOffset;
   }
@@ -165,31 +161,14 @@ function dateToDosDateTime(date) {
 }
 
 /**
- * @this ZipStream
- * @param {string} name
- * @returns {string}
- */
-function validateName(name) {
-  if (
-    name.startsWith('/') ||  // Starts with a slash
-    name.includes('\\') ||   // Contains backslash
-    PATTERN_DRIVE.test(name) // Starts with a drive letter
-  ) {
-    throw new Error('Invalid file name');
-  } else if (this.names.has(name)) {
-    throw new Error('Duplicated file name');
-  }
-  return name;
-}
-
-/**
  * @param {ZipStream} stream
- * @param {ZipEntry} entry
+ * @param {{ name: Buffer, [other: string]: number }} entry
  * @param {ArrayBufferView|DataView} data
  */
 function writeLocalFileHeaderAndData(stream, entry, data) {
   const { version, method, lastModified, crc, sizeCompressed,
-          sizeUncompressed, nameLength, name } = entry;
+    sizeUncompressed, nameLength, name,
+  } = entry;
   const header = Buffer.allocUnsafe(FIXED_LFH_SIZE);
   header.writeUint32LE(0x04034b50      ,  0); // local file header signature
   header.writeUint16LE(version         ,  4); // version needed to extract
@@ -209,12 +188,13 @@ function writeLocalFileHeaderAndData(stream, entry, data) {
 
 /**
  * @param {ZipStream} stream
- * @param {ZipEntry} entry
+ * @param {{ name: Buffer, [other: string]: number }} entry
  */
 function flushCentralDirHeader(stream, entry) {
   const { version, method, lastModified, crc, sizeCompressed,
-          sizeUncompressed, nameLength, name, byteOffset } = entry;
-  const header = Buffer.allocUnsafe(FIXED_CDH_SIZE);
+    sizeUncompressed, nameLength, name, byteOffset,
+  } = entry;
+  const header = Buffer.alloc(FIXED_CDH_SIZE);
   header.writeUint32LE(0x02014b50      ,  0); // central file header signature
   header.writeUint16LE(VERSION_MADE_BY ,  4); // version made by
   header.writeUint16LE(version         ,  6); // version needed to extract
@@ -225,11 +205,6 @@ function flushCentralDirHeader(stream, entry) {
   header.writeUint32LE(sizeCompressed  , 20); // compressed size
   header.writeUint32LE(sizeUncompressed, 24); // uncompressed size
   header.writeUint16LE(nameLength      , 28); // file name length
-  header.writeUint16LE(0               , 30); // extra field length
-  header.writeUint16LE(0               , 32); // file comment length
-  header.writeUint16LE(0               , 34); // disk number start
-  header.writeUint16LE(0               , 36); // internal file attributes
-  header.writeUint32LE(0               , 38); // external file attributes
   header.writeUint32LE(byteOffset      , 42); // relative offset of local header
   stream.push(header);
   stream.push(name);
@@ -239,22 +214,21 @@ function flushCentralDirHeader(stream, entry) {
 /**
  * @param {ZipStream} stream
  * @param {number} centralDirOffset
+ * @param {number} totalEntries
  */
-function flushEndOfCentralDirRecord(stream, centralDirOffset) {
-  const { byteOffset, entries: { length: totalEntries } } = stream;
-  const centralDirSize = byteOffset - centralDirOffset;
+function flushEndOfCentralDirRecord(stream, centralDirOffset, totalEntries) {
+  const centralDirSize = stream.byteOffset - centralDirOffset;
   if (centralDirSize > MAX32) {
     throw new RangeError('The size of the central directory exceeds 0xFFFFFFFF bytes');
   }
-  const record = Buffer.allocUnsafe(FIXED_EOCDR_SIZE);
+  const record = Buffer.alloc(FIXED_EOCDR_SIZE);
   record.writeUint32LE(0x06054b50      ,  0); // end of central dir signature
-  record.writeUint16LE(0               ,  4); // number of this disk
-  record.writeUint16LE(0               ,  6); // number of the disk with the start of the central dir
-  record.writeUint16LE(totalEntries    ,  8); // total number of entries in the central dir on this disk
+  record.writeUint16LE(totalEntries    ,  8); // total number of entries in the central dir
+                                              // on this disk
   record.writeUint16LE(totalEntries    , 10); // total number of entries in the central dir
   record.writeUint32LE(centralDirSize  , 12); // size of the central dir
-  record.writeUint32LE(centralDirOffset, 16); // offset of start of central dir with respect to the starting disk number
-  record.writeUint16LE(0               , 20); // .ZIP file comment length
+  record.writeUint32LE(centralDirOffset, 16); // offset of start of central dir
+                                              // with respect to the starting disk number
   stream.push(record);
   stream.byteOffset += FIXED_EOCDR_SIZE;
 }
