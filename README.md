@@ -1,126 +1,193 @@
 # Mozip
 
-Minimal library for generating ZIP files using Promises
+Minimal, single-file library for generating ZIP archives with Node.js streams and a Promise-based API
 
-## Features
+- Zero dependencies except Node.js built-in modules
+- Implements a Node.js `Readable` stream
+- Supported compression methods: Store (no compression), Deflate
+- Configurable with zlib options (level, chunk size, etc.) for Deflate
+- UTF-8 filenames enforced
 
-Mozip is for those who don't need any complex things and just want to pack a few files.
+Not supported:
 
-- No dependencies except Node.js built-in modules.
-- Outputs as a Node.js stream.
-- Provides Promise-based API.
-- Uses UTF-8 file names.
-- Supports store (no compression) and deflate compression methods.
-- Supports setting zlib options: compression level, chunk size, etc.
-- Does NOT support comments.
-- Does NOT support Zip64 (files larger than or equal 4 GiB).
+- ZIP64 (files 4 GiB or larger, etc.)
+- Splitting or spanning archives
+- Configuring file attributes
+- Comments
 
 ## Usage
 
 ``` javascript
+import { Buffer } from 'node:buffer';
 import { writeFile } from 'node:fs/promises';
-import { ZipStream, dateToDosDateTime } from 'mozip';
+import { constants } from 'node:zlib';
+import { ZipStream, dosDateTime } from 'mozip';
 
 const zip = new ZipStream();
-const writing = writeFile('example.zip', zip);
-
-// Add a file into the stream
-// Can set compression level
-const data = new TextEncoder().encode('Hello, World!\n');
-zip.writeFile('uni♥code♦.txt', data);
-zip.writeFile('best-compression.txt', data, { zlib: { level: 9 } });
-zip.writeFile('no-compression.txt', data, { compress: false });
-
-// Can set modified date/time
-// Also can reuse options with pre-calculated date/time
-const date = new Date(2001, 0, 1);
-const options = { lastModified: dateToDosDateTime(date) };
-zip.writeFile('20010101/0.txt', data, { lastModified: date });
-zip.writeFile('20010101/1.txt', data, options);
-zip.writeFile('20010101/2.txt', data, options);
-
-// Can handle errors that occurred before writing data into the stream
-zip.writeFile('/invalid-filename', data).catch(() => {
-  console.warn('The stream was not destroyed. Just ignore it.');
+const finished = writeFile('example.zip', zip).catch((error) => {
+  console.error(error); // Stream or file writing error
 });
 
-// Must be ended
-zip.end();
+// Files are added in `appendFile()` call order, though compression may run in parallel.
+// No need to await this unless parallel task management is needed.
+await zip.appendFile('heavy/file', Buffer.alloc(2**31 - 1));
 
-await writing;
+const data = Buffer.from('Hello, world!\n'.repeat(2**16));
+zip.appendFile('compressed', data);
+zip.appendFile('stored', data, { compress: false });
+zip.appendFile('compressed/best', data, {
+  zlib: { level: constants.Z_BEST_COMPRESSION },
+});
+
+const date = new Date('2000-01-02T01:23:45.678Z');
+zip.appendFile('timezone/local', data, { lastModified: date });
+zip.appendFile('timezone/UTC+9', data, {
+  lastModified: dosDateTime(date.getTime(), 9 * 60 * 60 * 1000),
+});
+
+// Rejects if a filename starts with a drive letter.
+zip.appendFile('C:\\file', data).catch(() => {
+  console.log('Skipped; the stream is still alive.');
+});
+
+// Must call `finalize()` after all files are added.
+// No need to await this unless the total size is needed.
+zip.finalize().then((byteLength) => {
+  if (byteLength < 0) return; // Failed to finalize
+  console.log(`Total size of the ZIP archive: ${byteLength} bytes`);
+});
+
+await finished;
 ```
 
-## Installation
+## Install
 
-Mozip is published in the npm registry as [mozip](https://www.npmjs.com/package/mozip). Install using your package manager (e.g. `npm install mozip`), or download a tarball or ZIP file from the [latest release](https://github.com/ijisol/mozip/releases).
+Install [mozip](https://www.npmjs.com/package/mozip) from the npm registry with your preferred package manager, such as:
+
+``` shell
+npm install mozip
+```
+
+Then import the package:
+
+``` javascript
+import { ZipStream, dosDateTime } from 'mozip';
+```
+
+Alternatively, download [mozip.js](https://github.com/ijisol/mozip/blob/latest/mozip.js) from the latest release, then import it directly:
+
+``` javascript
+import { ZipStream, dosDateTime } from './mozip.js';
+```
+
+In Node.js, v22.2 or later is required. Using the package in CommonJS modules requires v22.10 or later.
+
+Also compatible with any runtime providing:
+
+- `Buffer` from `node:buffer`
+- `Readable` from `node:stream`
+- `promisify()` from `node:util`
+- `crc32()`, `deflateRaw()` from `node:zlib`
+- Global `Promise.withResolvers()`
 
 ## API
 
-### `new ZipStream()`
+### `new ZipStream([options])`
 
-Public Instance Members:
+- Extends: [`Readable`](https://nodejs.org/api/stream.html#class-streamreadable) from `node:stream`
+- `[options]`: `{Object}` Passed to the [`Readable` constructor](https://nodejs.org/api/stream.html#new-streamreadableoptions).
 
-- `names`: `Set` of file names in entries
+Can be piped or passed to any consumer that accepts a `Readable`, such as `writeFile()` from `node:fs/promises`.
 
-Inherits the [`Transform` class of the `node:stream` module](https://nodejs.org/api/stream.html#class-streamtransform).
+Stream errors are always emitted by the stream itself, never rejected within instance method calls.
 
-### `ZipStream.prototype.validateFile(name)`
+Instance fields not documented here should not be considered public API.
 
-Validates a file name.
+### `ZipStream#validateFilename(name)`
 
-Parameters:
+- `name`: `{string}` Filename
+- Returns: `{string}` Normalized filename
 
-- `name`: `string`
+Normalizes and validates a filename according to the minimum ZIP requirements.
 
-Returns a `string`.
+Removes leading slashes, throws an error if the name starts with a drive letter, and replaces backward slashes with forward slashes.
 
-It validates only minimum restrictions from the ZIP specification and denies duplicates. For reference, the specification requires that the file name MUST NOT contain a drive or device letter, a leading slash, or a backslash (`\`).
+Can be overridden to enforce stricter rules, such as [EPUB restrictions](https://www.w3.org/TR/epub-33/#sec-container-filenames).
 
-For more complicated restrictions like [EPUB 3](https://www.w3.org/TR/epub-33/#sec-container-filenames), override this method. You can use `this.names` for getting file names already in entries.
+### `ZipStream#appendFile(name, data[, options])`
 
-### `ZipStream.prototype.writeFile(name, data[, options])`
+- `name`: `{string}` Filename
+- `data`: `{TypedArray | DataView}` File data
+- `[options]`: `{Object}`
+  - `[compress]`: `{boolean}` Defaults to true. Deflate if true, store if false.
+  - `[lastModified]`: `{Date | number}` Last modified date/time of the file, defaults to the current local time. If an unsigned 32-bit integer, it is interpreted as MS-DOS date and time combined from high to low, as produced by `dosDateTime()`.
+  - `[zlib]`: `{node:zlib.Options}` Options for deflate compression. Implements the [`Options`](https://nodejs.org/api/zlib.html#class-options) interface from `node:zlib`.
+- Returns: `{Promise<boolean>}` Fulfills with true once the file header and data have been pushed to the internal read buffer, or false if the stream is destroyed while processing.
 
-Add a file to entries and push its data to the stream.
+Adds a file to the ZIP archive. Files are added in call order, though compression may run in parallel.
 
-Parameters:
+Do not modify the contents of `data` after passing it; the view is compressed or written directly without being copied.
 
-- `name`: `string`
-- `data`: `TypedArray` (includes `Buffer` of the `node:buffer`) or `DataView`
-- `options`: (optional) object that implements below properties:
-  - `compress`: (optional) `boolean`
-  - `lastModified`: (optional) `Date`, or variable that could be the `date` parameter for the `dateToDosDateTime(date)` function
-  - `zlib`: (optional) object that implements the [`Options` interface of the `node:zlib` module](https://nodejs.org/api/zlib.html#class-options)
+Even when `options.compress` is true (the default), the file is stored if compressing did not reduce its size.
 
-Returns a `Promise` that is resolved after compressing completed.
+To set a specific time zone for `options.lastModified`, pass a value produced by `dosDateTime()`. By default, the local offset at the timestamp is used.
 
-The `name` parameter would be a file name. It would be validated by the `validator(name)` method of the `ZipStream` instance.
+Rejected only before stream writing with:
 
-The `data` parameter woud be data of the file. It become compressed by default. To store without compression, set the `compress` property in the `options` parameter to `false`.
+- `Error` if the stream is already destroyed, or `finalize()` was already called.
+- `RangeError` if the archive already contains the maximum of 0xFFFF files.
+- `TypeError` if any parameter has an invalid type.
+- `RangeError` if the filename length exceeds 0xFFFF bytes in UTF-8 encoding, or the file size exceeds 0xFFFFFFFF bytes.
+- `RangeError` if the offset of the start of the central directory would exceed 0xFFFFFFFF, or the size of the central directory would exceed 0xFFFFFFFF bytes.
 
-If the `lastModified` property of the `options` parameter is undefined, it would be a moment when compressing started, according to the ZIP specification. If a `number`, it must be an unsigned 32-bit integer that represents MS-DOS date and time. Otherwise, it would be converted by the `dateToDosDateTime(date)` function.
+Errors during writing are emitted by the stream.
 
-### `ZipStream.prototype.end()`
+### `ZipStream#finalize()`
 
-Ends the stream of a writable side, flushing central directory headers and the end of central directory record.
+- Returns: `{Promise<number>}` Fulfills with the total byte size of the archive, or `-1` if the stream is destroyed while processing.
 
-Returns a `Promise` that fulfills with a `number`, total byte length of the generated file.
+Finalizes the ZIP archive by writing the central directory and ending the stream. Must be called after all files are added.
 
-### `dateToDosDateTime(date)`
+Rejected with an `Error` if the stream is already destroyed, `finalize()` was already called, or no files were added.
 
-Parameters:
+If every file failed to be written, the stream is destroyed and an `Error` is emitted by the stream.
 
-- `date`: `Date` or object that implements below methods like `Date`:
-  - `getFullYear()`
-  - `getMonth()`
-  - `getDate()`
-  - `getHours()`
-  - `getMinutes()`
-  - `getSeconds()`
+This does not wait for the stream to be completely consumed. To await complete stream consumption, `finished()` from `node:stream/promises` may be useful:
 
-Returns a `number`, unsigned 32-bit integer that represents [MS-DOS date and time](https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-filetimetodosdatetime).
+``` javascript
+import { finished } from 'node:stream/promises';
+import { ZipStream } from 'mozip';
+
+/* ... */
+
+const zip = new ZipStream();
+const consumed = finished(zip);
+
+/* Pipe the stream, call `zip.appendFile()` more than once, etc. */
+
+zip.finalize();
+try {
+  await consumed;
+  console.log('Stream consumed');
+} catch (error) {
+  console.error('Stream errored', error);
+}
+```
+
+### `dosDateTime(epochMilliseconds[, offsetMilliseconds])`
+
+- `epochMilliseconds`: `{number}` Milliseconds since the epoch (1970-01-01T00:00:00Z)
+- `[offsetMilliseconds]`: `{number}` UTC offset in milliseconds, defaults to the local time zone offset at `epochMilliseconds`
+- Returns: `{number}` Unsigned 32-bit integer combining [MS-DOS date and time](https://learn.microsoft.com/en-us/windows/win32/sysinfo/ms-dos-date-and-time) from high to low. Clamped to the MS-DOS date range of 1980 to 2107.
+
+Used with the `options.lastModified` parameter of `ZipStream#appendFile()`. Useful for applying the same timestamp to multiple files, or setting a specific time zone.
+
+Note: The sign of `Date#getTimezoneOffset()` is opposite to that of the UTC offset.
+
+## License
+
+[MIT](LICENSE)
 
 ## Notes
 
-Mozip's name is a pun; a Korean word '모집(mojip)' means collecting, and ZIP's Hangul notation is '집'.
-
-Overall API is inspired by the excellent zipping library [yazl](https://github.com/thejoshwolfe/yazl).
+The name Mozip is a pun; the Korean word 모집 (mo-jib) means gathering or collecting, and ZIP is written 집 in Hangul.
