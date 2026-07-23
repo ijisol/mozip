@@ -21,7 +21,7 @@ Not supported:
 import { Buffer } from 'node:buffer';
 import { writeFile } from 'node:fs/promises';
 import { constants } from 'node:zlib';
-import { ZipStream, dosDateTime } from 'mozip';
+import { ZipStream, dosDateTimeFrom } from 'mozip';
 
 const zip = new ZipStream();
 const finished = writeFile('example.zip', zip).catch((error) => {
@@ -42,7 +42,7 @@ zip.appendFile('compressed/best', data, {
 const date = new Date('2000-01-02T01:23:45.678Z');
 zip.appendFile('timezone/local', data, { lastModified: date });
 zip.appendFile('timezone/UTC+9', data, {
-  lastModified: dosDateTime(date.getTime(), 9 * 60 * 60 * 1000),
+  lastModified: dosDateTimeFrom(date.getTime(), 9 * 60 * 60 * 1000),
 });
 
 // Rejects if a filename starts with a drive letter.
@@ -71,13 +71,13 @@ npm install mozip
 Then import the package:
 
 ``` javascript
-import { ZipStream, dosDateTime } from 'mozip';
+import { ZipStream, dosDateTimeFrom } from 'mozip';
 ```
 
 Alternatively, download [mozip.js](https://github.com/ijisol/mozip/blob/latest/mozip.js) from the latest release, then import it directly:
 
 ``` javascript
-import { ZipStream, dosDateTime } from './mozip.js';
+import { ZipStream, dosDateTimeFrom } from './mozip.js';
 ```
 
 In Node.js, v22.2 or later is required. Using the package in CommonJS modules requires v22.10 or later.
@@ -120,7 +120,7 @@ Can be overridden to enforce stricter rules, such as [EPUB restrictions](https:/
 - `data`: `{TypedArray | DataView}` File data
 - `[options]`: `{Object}`
   - `[compress]`: `{boolean}` Defaults to true. Deflate if true, store if false.
-  - `[lastModified]`: `{Date | number}` Last modified date/time of the file, defaults to the current local time. If an unsigned 32-bit integer, it is interpreted as MS-DOS date and time combined from high to low, as produced by `dosDateTime()`.
+  - `[lastModified]`: `{Date | number}` Last modified date/time of the file, defaults to the current local time. If an unsigned 32-bit integer, it is interpreted as MS-DOS date and time combined from high to low, as produced by `dosDateTimeFrom()`.
   - `[zlib]`: `{node:zlib.Options}` Options for deflate compression. Implements the [`Options`](https://nodejs.org/api/zlib.html#class-options) interface from `node:zlib`.
 - Returns: `{Promise<boolean>}` Fulfills with true once the file header and data have been pushed to the internal read buffer, or false if the stream is destroyed while processing.
 
@@ -130,7 +130,7 @@ Do not modify the contents of `data` after passing it; the view is compressed or
 
 Even when `options.compress` is true (the default), the file is stored if compressing did not reduce its size.
 
-To set a specific time zone for `options.lastModified`, pass a value produced by `dosDateTime()`. By default, the local offset at the timestamp is used.
+To set a specific time zone for `options.lastModified`, pass a value produced by `dosDateTimeFrom()`. By default, the local offset at the timestamp is used.
 
 Rejected only before stream writing with:
 
@@ -174,7 +174,9 @@ try {
 }
 ```
 
-### `dosDateTime(epochMilliseconds[, offsetMilliseconds])`
+### `dosDateTimeFrom(epochMilliseconds[, offsetMilliseconds])`
+
+Alias: `dosDateTime()`
 
 - `epochMilliseconds`: `{number}` Milliseconds since the epoch (1970-01-01T00:00:00Z)
 - `[offsetMilliseconds]`: `{number}` UTC offset in milliseconds, defaults to the local time zone offset at `epochMilliseconds`

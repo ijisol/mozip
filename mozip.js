@@ -166,9 +166,9 @@ export class ZipStream extends Readable {
     const date = options.lastModified;
     let lastMod = 0;
     if (date === undefined) {
-      lastMod = dosDateTime(Date.now());
+      lastMod = dosDateTimeFrom(Date.now());
     } else if (date instanceof Date) {
-      lastMod = dosDateTime(date.getTime(), date.getTimezoneOffset() * -60000);
+      lastMod = dosDateTimeFrom(date.getTime(), date.getTimezoneOffset() * -60000);
     } else if (Number.isInteger(date) && (date >= 0) && (date <= MAX32)) {
       lastMod = date;
     } else {
@@ -302,7 +302,7 @@ cannot exceed 0xFFFFFFFF bytes.');
  * @returns {number} Unsigned 32-bit integer combining MS-DOS date and time
  * from high to low. Clamped to the MS-DOS date range of 1980 to 2107.
  */
-export function dosDateTime(
+export function dosDateTimeFrom(
   epochMilliseconds,
   offsetMilliseconds = new Date(epochMilliseconds).getTimezoneOffset() * -60000
 ) {
@@ -319,3 +319,5 @@ export function dosDateTime(
     Math.trunc(date.getUTCSeconds() / 2)
   );
 }
+
+export { dosDateTimeFrom as dosDateTime };
