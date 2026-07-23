@@ -28,13 +28,13 @@ async function push(stream, chunk) {
   if (stream.destroyed) return false;
   if (!stream.push(chunk)) {
     const { promise, resolve } = Promise.withResolvers();
-    stream.drain = resolve;
     stream.drained = promise;
+    stream.drain = resolve;
   }
   return true;
 }
 
-function localFileHeaderOf(entry) {
+function localFileHeaderFrom(entry) {
   const { name, compressedSize, uncompressedSize } = entry;
   const nameLength = name.byteLength;
   const header = Buffer.allocUnsafe(FIXED_LFH_SIZE + nameLength);
@@ -53,7 +53,7 @@ function localFileHeaderOf(entry) {
   return header;
 }
 
-function centralDirHeaderOf(entry) {
+function centralDirHeaderFrom(entry) {
   const { name, compressedSize, uncompressedSize } = entry;
   const nameLength = name.byteLength;
   const header = Buffer.allocUnsafe(FIXED_CDH_SIZE + nameLength);
@@ -98,14 +98,14 @@ function endOfCentralDirRecordOf(stream) {
 }
 
 export class ZipStream extends Readable {
+  finalized = false;
   centralDirOffset = 0;
   centralDirSize = 0;
   totalEntries = 0;
   entries = [];
-  drain = () => {};
-  drained = Promise.resolve();
   queue = Promise.resolve();
-  finalized = false;
+  drained = Promise.resolve();
+  drain = () => {};
 
   _destroy(error, callback) {
     this.drain();
@@ -126,7 +126,7 @@ export class ZipStream extends Readable {
   validateFilename(name) {
     name = name.replace(LEADING_SLASHES, '');
     if (DRIVE_LETTER.test(name)) {
-      throw new Error('Invalid filename: Must not start with a drive letter.');
+      throw new Error('Filename cannot start with a drive letter');
     }
     return name.replaceAll('\\', '/');
   }
@@ -136,7 +136,7 @@ export class ZipStream extends Readable {
    * Files are added in call order, though compression may run in parallel.
    * Rejected only before stream writing; errors during writing are emitted by the stream.
    * @param {string} name
-   * @param {TypedArray | DataView} data
+   * @param {NodeJS.TypedArray | DataView} data
    * @param {Object} [options]
    * @param {boolean} [options.compress] Defaults to true.
    * Deflate if true, store if false.
@@ -150,17 +150,17 @@ export class ZipStream extends Readable {
   async appendFile(name, data, options = {}) {
     const totalEntries = this.totalEntries + 1;
     if (this.destroyed) {
-      throw new Error('Stream already destroyed');
+      throw new Error('Cannot call `appendFile()` after the stream has been destroyed');
     } else if (this.finalized) {
-      throw new Error('Archive finalized: Cannot add a file after `finalize()` was called.');
+      throw new Error('Cannot add a file after calling `finalize()`');
     } else if (totalEntries > MAX16) {
-      throw new RangeError('Too many files: Cannot contain more than 0xFFFF files.');
+      throw new RangeError('Cannot add a file: 65535 (0xFFFF) files have already been added');
     }
 
     if (typeof name !== 'string') {
-      throw new TypeError('Invalid filename: `name` must be a string.');
+      throw new TypeError('`name` must be a string');
     } else if (!ArrayBuffer.isView(data)) {
-      throw new TypeError('Invalid data: `data` must be a TypedArray or DataView instance.');
+      throw new TypeError('`data` must be a TypedArray or DataView instance');
     }
 
     const date = options.lastModified;
@@ -172,8 +172,9 @@ export class ZipStream extends Readable {
     } else if (Number.isInteger(date) && (date >= 0) && (date <= MAX32)) {
       lastMod = date;
     } else {
-      throw new TypeError('Invalid date/time: `options.lastModified` must be a Date instance \
-or unsigned 32-bit integer if provided.');
+      throw new TypeError(
+        '`options.lastModified` must be a Date instance or an unsigned 32-bit integer'
+      );
     }
 
     name = this.validateFilename(name);
@@ -181,9 +182,9 @@ or unsigned 32-bit integer if provided.');
     const nameLength = nameBytes.byteLength;
     const uncompressedSize = data.byteLength;
     if (nameLength > MAX16) {
-      throw new RangeError('Filename too long: Cannot exceed 0xFFFF bytes in UTF-8 encoding.');
+      throw new RangeError('Filename length in UTF-8 bytes must be less than 64 KiB');
     } else if (uncompressedSize > MAX32) {
-      throw new RangeError('File too large: Cannot exceed 0xFFFFFFFF bytes.');
+      throw new RangeError('File size must be less than 4 GiB');
     }
 
     const { queue } = this;
@@ -220,11 +221,13 @@ or unsigned 32-bit integer if provided.');
       centralDirOffset = byteOffset + FIXED_LFH_SIZE + nameLength + compressedSize;
       centralDirSize = this.centralDirSize + FIXED_CDH_SIZE + nameLength;
       if (centralDirOffset > MAX32) {
-        throw new RangeError('Archive too large: The offset of the start of the central directory \
-cannot exceed 0xFFFFFFFF.');
+        throw new RangeError(
+          'Failed to add the file: the archive size before the central directory would reach or exceed 4 GiB'
+        );
       } else if (centralDirSize > MAX32) {
-        throw new RangeError('Archive too large: The size of the central directory \
-cannot exceed 0xFFFFFFFF bytes.');
+        throw new RangeError(
+          'Failed to add the file: the size of the central directory would reach or exceed 4 GiB'
+        );
       }
     } catch (error) {
       --this.totalEntries;
@@ -234,17 +237,17 @@ cannot exceed 0xFFFFFFFF bytes.');
 
     try {
       const entry = {
-        name: nameBytes,
+        version: compress ? VERSION_DEFLATE : VERSION_STORE,
+        method: compress ? METHOD_DEFLATE : METHOD_STORE,
         lastMod,
         crc,
         compressedSize,
         uncompressedSize,
         byteOffset,
-        method: compress ? METHOD_DEFLATE : METHOD_STORE,
-        version: compress ? VERSION_DEFLATE : VERSION_STORE,
+        name: nameBytes,
       };
       if (
-        !(await push(this, localFileHeaderOf(entry))) ||
+        !(await push(this, localFileHeaderFrom(entry))) ||
         ((compressedSize > 0) && !(await push(this, data)))
       ) return false;
       this.entries.push(entry);
@@ -261,7 +264,7 @@ cannot exceed 0xFFFFFFFF bytes.');
 
   /**
    * Finalizes the ZIP archive. Must be called after all files are added.
-   * If every file failed to be written, the stream is destroyed
+   * If every file failed to be added, the stream is destroyed
    * and an `Error` is emitted by the stream.
    * This does not wait for the stream to be completely consumed.
    * @returns {Promise<number>} Fulfills with the total byte size of
@@ -269,21 +272,21 @@ cannot exceed 0xFFFFFFFF bytes.');
    */
   async finalize() {
     if (this.destroyed) {
-      throw new Error('Stream already destroyed');
+      throw new Error('Cannot call `finalize()` after the stream has been destroyed');
     } else if (this.finalized) {
-      throw new Error('Archive finalized: Cannot call `finalize()` more than once.');
+      throw new Error('Cannot call `finalize()` more than once');
     } else if (this.totalEntries === 0) {
-      throw new Error('Empty archive: Must contain at least one file.');
+      throw new Error('Cannot finalize when no files have been added');
     }
     this.finalized = true;
     await this.queue;
     if (this.destroyed) return -1;
     try {
       if (this.totalEntries === 0) {
-        throw new Error('Empty archive: Every file failed to be written.');
+        throw new Error('Every file failed to be added');
       }
       for (const entry of this.entries) {
-        if (!(await push(this, centralDirHeaderOf(entry)))) return -1;
+        if (!(await push(this, centralDirHeaderFrom(entry)))) return -1;
       }
       if (!(await push(this, endOfCentralDirRecordOf(this)))) return -1;
       this.push(null);

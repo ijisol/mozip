@@ -150,7 +150,7 @@ Finalizes the ZIP archive by writing the central directory and ending the stream
 
 Rejected with an `Error` if the stream is already destroyed, `finalize()` was already called, or no files were added.
 
-If every file failed to be written, the stream is destroyed and an `Error` is emitted by the stream.
+If every file failed to be added, the stream is destroyed and an `Error` is emitted by the stream.
 
 This does not wait for the stream to be completely consumed. To await complete stream consumption, `finished()` from `node:stream/promises` may be useful:
 
