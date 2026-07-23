@@ -9,5 +9,8 @@
   "exports": "./mozip.js",
   "engines": {
     "node": ">=22.10.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.13.3"
   }
 }
