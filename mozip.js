@@ -24,6 +24,24 @@ const DRIVE_LETTER = /^[A-Za-z]:/;
 
 const deflateRawAsync = promisify(deflateRaw);
 
+function getLastMod({ lastModified: dateTime }) {
+  if (dateTime === undefined) {
+    return dosDateTimeFrom(Date.now());
+  } else if (Number.isInteger(dateTime)) {
+    if ((dateTime >= 0) && (dateTime <= MAX32)) {
+      return dateTime;
+    }
+  } else if (dateTime instanceof Date) {
+    const time = dateTime.getTime();
+    if (!Number.isNaN(time)) {
+      return dosDateTimeFrom(time, dateTime.getTimezoneOffset() * -MS_PER_MINUTE);
+    }
+  }
+  throw new TypeError(
+    '`options.lastModified` must be a valid Date instance or an unsigned 32-bit integer'
+  );
+}
+
 async function push(stream, chunk) {
   await stream.drained;
   if (stream.destroyed) return false;
@@ -162,20 +180,7 @@ export class ZipStream extends Readable {
       throw new TypeError('`data` must be a TypedArray/DataView instance');
     }
 
-    const date = options.lastModified;
-    let lastMod = 0;
-    if (date === undefined) {
-      lastMod = dosDateTimeFrom(Date.now());
-    } else if (date instanceof Date) {
-      lastMod = dosDateTimeFrom(date.getTime(), date.getTimezoneOffset() * -MS_PER_MINUTE);
-    } else if (Number.isInteger(date) && (date >= 0) && (date <= MAX32)) {
-      lastMod = date;
-    } else {
-      throw new TypeError(
-        '`options.lastModified` must be a Date instance or an unsigned 32-bit integer'
-      );
-    }
-
+    const lastMod = getLastMod(options);
     const nameBytes = Buffer.from(this.validateFilename(name), 'utf-8');
     const nameLength = nameBytes.byteLength;
     const uncompressedSize = data.byteLength;
