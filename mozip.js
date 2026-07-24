@@ -7,19 +7,20 @@ import { Readable } from 'node:stream';
 import { promisify } from 'node:util';
 import { crc32, deflateRaw } from 'node:zlib';
 
-const MAX16 = 0xffff;
-const MAX32 = 0xffffffff;
-const FIXED_LFH_SIZE   = 30;
-const FIXED_CDH_SIZE   = 46;
+const MAX16 = 0xffff; // 64 KiB - 1 byte
+const MAX32 = 0xffffffff; // 4 GiB - 1 byte
+const MS_PER_MINUTE = 6000;
+const FIXED_LFH_SIZE = 30;
+const FIXED_CDH_SIZE = 46;
 const FIXED_EOCDR_SIZE = 22;
 const VERSION_MADE_BY = 63; // v6.3 & MS-DOS
 const VERSION_STORE   = 10; // v1.0
 const VERSION_DEFLATE = 20; // v2.0
-const GPB_FLAG = 2 ** 11; // Set bit 11 (UTF-8 filename)
+const GPB_FLAG = 2**11; // Set bit 11 (UTF-8 filename)
 const METHOD_STORE   = 0;
 const METHOD_DEFLATE = 8;
 const LEADING_SLASHES = /^[\/\\]+/;
-const DRIVE_LETTER    = /^[A-Za-z]:/;
+const DRIVE_LETTER = /^[A-Za-z]:/;
 
 const deflateRawAsync = promisify(deflateRaw);
 
@@ -118,8 +119,8 @@ export class ZipStream extends Readable {
 
   /**
    * Normalizes and validates a filename according to the minimum ZIP requirements.
-   * Removes leading slashes, throws an error if the name starts with
-   * a drive letter, and replaces backward slashes with forward slashes.
+   * Removes leading slashes, throws an error if the name starts with a
+   * drive letter, and replaces backward slashes with forward slashes.
    * @param {string} name
    * @returns {string} Normalized filename
    */
@@ -132,35 +133,33 @@ export class ZipStream extends Readable {
   }
 
   /**
-   * Adds a file to the ZIP archive.
-   * Files are added in call order, though compression may run in parallel.
+   * Adds a file to the archive. Files are added in call order, though
+   * compression may run in parallel.
    * Rejected only before stream writing; errors during writing are emitted by the stream.
    * @param {string} name
    * @param {NodeJS.TypedArray | DataView} data
    * @param {Object} [options]
-   * @param {boolean} [options.compress] Defaults to true.
-   * Deflate if true, store if false.
+   * @param {boolean} [options.compress] Deflate if true, store if false. Defaults to true.
    * @param {Date | number} [options.lastModified] Defaults to the current local time. If an
    * unsigned 32-bit integer, it is interpreted as MS-DOS date and time combined from high to low.
-   * @param {import('node:zlib').ZlibOptions} [options.zlib] For deflate compression.
-   * Implements the `Options` interface from `node:zlib`.
+   * @param {import('node:zlib').ZlibOptions} [options.zlib] For deflate compression
    * @returns {Promise<boolean>} Fulfills with true once the file header and data have been pushed
    * to the internal read buffer, or false if the stream is destroyed while processing.
    */
   async appendFile(name, data, options = {}) {
-    const totalEntries = this.totalEntries + 1;
+    const { totalEntries } = this;
     if (this.destroyed) {
       throw new Error('Cannot call `appendFile()` after the stream has been destroyed');
     } else if (this.finalized) {
       throw new Error('Cannot add a file after calling `finalize()`');
-    } else if (totalEntries > MAX16) {
+    } else if (totalEntries >= MAX16) {
       throw new RangeError('Cannot add a file: 65535 (0xFFFF) files have already been added');
     }
 
     if (typeof name !== 'string') {
       throw new TypeError('`name` must be a string');
     } else if (!ArrayBuffer.isView(data)) {
-      throw new TypeError('`data` must be a TypedArray or DataView instance');
+      throw new TypeError('`data` must be a TypedArray/DataView instance');
     }
 
     const date = options.lastModified;
@@ -168,7 +167,7 @@ export class ZipStream extends Readable {
     if (date === undefined) {
       lastMod = dosDateTimeFrom(Date.now());
     } else if (date instanceof Date) {
-      lastMod = dosDateTimeFrom(date.getTime(), date.getTimezoneOffset() * -60000);
+      lastMod = dosDateTimeFrom(date.getTime(), date.getTimezoneOffset() * -MS_PER_MINUTE);
     } else if (Number.isInteger(date) && (date >= 0) && (date <= MAX32)) {
       lastMod = date;
     } else {
@@ -177,8 +176,7 @@ export class ZipStream extends Readable {
       );
     }
 
-    name = this.validateFilename(name);
-    const nameBytes = Buffer.from(name, 'utf-8');
+    const nameBytes = Buffer.from(this.validateFilename(name), 'utf-8');
     const nameLength = nameBytes.byteLength;
     const uncompressedSize = data.byteLength;
     if (nameLength > MAX16) {
@@ -187,12 +185,11 @@ export class ZipStream extends Readable {
       throw new RangeError('File size must be less than 4 GiB');
     }
 
+    // Keep next 4 lines before awaiting any async work:
     const { queue } = this;
     const { promise, resolve } = Promise.withResolvers();
-
-    // Next two lines must run before awaiting any async work:
     this.queue = queue.then(() => promise);
-    this.totalEntries = totalEntries; // Same as `++this.totalEntries`
+    this.totalEntries = totalEntries + 1;
 
     let { compress = true } = options;
     let compressedSize = uncompressedSize;
@@ -226,7 +223,7 @@ export class ZipStream extends Readable {
         );
       } else if (centralDirSize > MAX32) {
         throw new RangeError(
-          'Failed to add the file: the size of the central directory would reach or exceed 4 GiB'
+          'Failed to add the file: the central directory size would reach or exceed 4 GiB'
         );
       }
     } catch (error) {
@@ -263,9 +260,9 @@ export class ZipStream extends Readable {
   }
 
   /**
-   * Finalizes the ZIP archive. Must be called after all files are added.
-   * If every file failed to be added, the stream is destroyed
-   * and an `Error` is emitted by the stream.
+   * Finalizes the archive. Must be called after all files are added.
+   * If every file failed to be added, the stream is destroyed and an
+   * error is emitted by the stream.
    * This does not wait for the stream to be completely consumed.
    * @returns {Promise<number>} Fulfills with the total byte size of
    * the archive, or `-1` if the stream is destroyed while processing.
@@ -275,14 +272,14 @@ export class ZipStream extends Readable {
       throw new Error('Cannot call `finalize()` after the stream has been destroyed');
     } else if (this.finalized) {
       throw new Error('Cannot call `finalize()` more than once');
-    } else if (this.totalEntries === 0) {
+    } else if (this.totalEntries <= 0) {
       throw new Error('Cannot finalize when no files have been added');
     }
     this.finalized = true;
     await this.queue;
     if (this.destroyed) return -1;
     try {
-      if (this.totalEntries === 0) {
+      if (this.totalEntries <= 0) {
         throw new Error('Every file failed to be added');
       }
       for (const entry of this.entries) {
@@ -307,12 +304,12 @@ export class ZipStream extends Readable {
  */
 export function dosDateTimeFrom(
   epochMilliseconds,
-  offsetMilliseconds = new Date(epochMilliseconds).getTimezoneOffset() * -60000
+  offsetMilliseconds = new Date(epochMilliseconds).getTimezoneOffset() * -MS_PER_MINUTE
 ) {
   const date = new Date(epochMilliseconds + offsetMilliseconds);
   const year = date.getUTCFullYear() - 1980;
-  if (year < 0b0000000) return 0x00210000 /* 1980-01-01T00:00:00 */;
-  if (year > 0b1111111) return 0xff9fbf7d /* 2107-12-31T23:59:58 */;
+  if (year < 0)         return 0x00210000; // 1980-01-01T00:00:00
+  if (year > 0b1111111) return 0xff9fbf7d; // 2107-12-31T23:59:58
   return ( // Do not use bitwise operators; they overflow.
     (year * 2**25) +
     ((date.getUTCMonth() + 1) * 2**21) +

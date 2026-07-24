@@ -119,7 +119,7 @@ Can be overridden to enforce stricter rules, such as [EPUB restrictions](https:/
 - `name`: `{string}` Filename
 - `data`: `{TypedArray | DataView}` File data
 - `[options]`: `{Object}`
-  - `[compress]`: `{boolean}` Defaults to true. Deflate if true, store if false.
+  - `[compress]`: `{boolean}` Deflate if true, store if false. Defaults to true.
   - `[lastModified]`: `{Date | number}` Last modified date/time of the file, defaults to the current local time. If an unsigned 32-bit integer, it is interpreted as MS-DOS date and time combined from high to low, as produced by `dosDateTimeFrom()`.
   - `[zlib]`: `{node:zlib.Options}` Options for deflate compression. Implements the [`Options`](https://nodejs.org/api/zlib.html#class-options) interface from `node:zlib`.
 - Returns: `{Promise<boolean>}` Fulfills with true once the file header and data have been pushed to the internal read buffer, or false if the stream is destroyed while processing.
