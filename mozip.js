@@ -196,7 +196,8 @@ export class ZipStream extends Readable {
     let crc = 0, byteOffset = 0, centralDirOffset = 0, centralDirSize = 0;
     try {
       crc = crc32(data);
-      if (compress && (uncompressedSize > 0)) {
+      compress &&= (uncompressedSize > 0);
+      if (compress) {
         const compressedData = await deflateRawAsync(data, options.zlib);
         if (this.destroyed) {
           resolve();
