@@ -9,7 +9,7 @@ import { crc32, deflateRaw } from 'node:zlib';
 
 const MAX16 = 0xffff; // 64 KiB - 1 byte
 const MAX32 = 0xffffffff; // 4 GiB - 1 byte
-const MS_PER_MINUTE = 6000;
+const MS_PER_MINUTE = 60000;
 const FIXED_LFH_SIZE = 30;
 const FIXED_CDH_SIZE = 46;
 const FIXED_EOCDR_SIZE = 22;
