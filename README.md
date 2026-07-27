@@ -10,7 +10,7 @@ Minimal, single-file library for generating ZIP archives with Node.js streams an
 
 Not supported:
 
-- ZIP64 (files 4 GiB or larger, etc.)
+- ZIP64 (files >= 4 GiB, etc.)
 - Splitting or spanning archives
 - Configuring file attributes
 - Comments
@@ -74,13 +74,9 @@ Then import the package:
 import { ZipStream, dosDateTimeFrom } from 'mozip';
 ```
 
-Alternatively, download [mozip.js](https://github.com/ijisol/mozip/blob/latest/mozip.js) from the latest release, then import it directly:
+Alternatively, download [mozip.js](https://github.com/ijisol/mozip/blob/latest/mozip.js) from the latest release and import it directly.
 
-``` javascript
-import { ZipStream, dosDateTimeFrom } from './mozip.js';
-```
-
-In Node.js, v22.2 or later is required. Using the package in CommonJS modules requires v22.10 or later.
+In Node.js, v22.2+ is required. Using the package in CommonJS modules requires v22.10+.
 
 Also compatible with any runtime providing:
 
@@ -108,9 +104,7 @@ Instance fields not documented here should not be considered public API.
 - `name`: `{string}` Filename
 - Returns: `{string}` Normalized filename
 
-Normalizes and validates a filename according to the minimum ZIP requirements.
-
-Removes leading slashes, throws an error if the name starts with a drive letter, and replaces backward slashes with forward slashes.
+Normalizes and validates a filename according to the minimum ZIP requirements. Removes leading slashes, throws an error if the name starts with a drive letter, and replaces backward slashes with forward slashes.
 
 Can be overridden to enforce stricter rules, such as [EPUB restrictions](https://www.w3.org/TR/epub-33/#sec-container-filenames).
 
@@ -134,21 +128,22 @@ To set a specific time zone for `options.lastModified`, pass a value produced by
 
 Rejected only before stream writing with:
 
-- `Error` if the stream is already destroyed, or `finalize()` was already called.
-- `RangeError` if the archive already contains the maximum of 0xFFFF files.
+- `Error` if the stream has been destroyed, or `finalize()` was already called.
+- `RangeError` if 65535 (0xFFFF) files have already been added.
 - `TypeError` if any parameter has an invalid type.
-- `RangeError` if the filename length exceeds 0xFFFF bytes in UTF-8 encoding, or the file size exceeds 0xFFFFFFFF bytes.
-- `RangeError` if the offset of the start of the central directory would exceed 0xFFFFFFFF, or the size of the central directory would exceed 0xFFFFFFFF bytes.
+- `Error` if the filename starts with a drive letter.
+- `RangeError` if the filename length in UTF-8 bytes reaches or exceeds 64 KiB, or the file size reaches or exceeds 4 GiB.
+- `RangeError` if the archive size before the central directory or the central directory size would reach or exceed 4 GiB.
 
 Errors during writing are emitted by the stream.
 
 ### `ZipStream#finalize()`
 
-- Returns: `{Promise<number>}` Fulfills with the total byte size of the archive, or `-1` if the stream is destroyed while processing.
+- Returns: `{Promise<number>}` Fulfills with the total byte size of the archive, or -1 if the stream is destroyed while processing.
 
 Finalizes the ZIP archive by writing the central directory and ending the stream. Must be called after all files are added.
 
-Rejected with an `Error` if the stream is already destroyed, `finalize()` was already called, or no files were added.
+Rejected with an `Error` if the stream has been destroyed, `finalize()` was already called, or no files have been added.
 
 If every file failed to be added, the stream is destroyed and an `Error` is emitted by the stream.
 
@@ -190,4 +185,4 @@ Note: The sign of `Date#getTimezoneOffset()` is opposite to that of the UTC offs
 
 ## Notes
 
-The name Mozip is a pun; the Korean word 모집 (mo-jib) means gathering or collecting, and ZIP is written 집 in Hangul.
+The name Mozip is a pun; the Korean word 모집 (mo-jip) means gathering or collecting, and zip is written 집 in Hangul.

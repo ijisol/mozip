@@ -277,7 +277,7 @@ export class ZipStream extends Readable {
    * error is emitted by the stream.
    * This does not wait for the stream to be completely consumed.
    * @returns {Promise<number>} Fulfills with the total byte size of
-   * the archive, or `-1` if the stream is destroyed while processing.
+   * the archive, or -1 if the stream is destroyed while processing.
    */
   async finalize() {
     if (this.destroyed) {
