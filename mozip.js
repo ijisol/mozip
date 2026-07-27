@@ -1,4 +1,4 @@
-// Mozip 5.1.2 (https://github.com/ijisol/mozip)
+// Mozip 6.0.0 (https://github.com/ijisol/mozip)
 // Copyright 2024 Lee Jisol <ijisol@naver.com>
 // SPDX-License-Identifier: MIT
 
