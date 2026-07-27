@@ -325,5 +325,3 @@ export function dosDateTimeFrom(
     Math.trunc(date.getUTCSeconds() / 2)
   );
 }
-
-export { dosDateTimeFrom as dosDateTime };

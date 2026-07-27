@@ -176,8 +176,6 @@ try {
 
 ### `dosDateTimeFrom(epochMilliseconds[, offsetMilliseconds])`
 
-Alias: `dosDateTime()`
-
 - `epochMilliseconds`: `{number}` Milliseconds since the epoch (1970-01-01T00:00:00Z)
 - `[offsetMilliseconds]`: `{number}` UTC offset in milliseconds, defaults to the local time zone offset at `epochMilliseconds`
 - Returns: `{number}` Unsigned 32-bit integer combining [MS-DOS date and time](https://learn.microsoft.com/en-us/windows/win32/sysinfo/ms-dos-date-and-time) from high to low. Clamped to the MS-DOS date range of 1980 to 2107.
