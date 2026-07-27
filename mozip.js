@@ -7,11 +7,10 @@ import { Readable } from 'node:stream';
 import { promisify } from 'node:util';
 import { crc32, deflateRaw } from 'node:zlib';
 
-const MAX16 = 0xffff; // 64 KiB - 1 byte
-const MAX32 = 0xffffffff; // 4 GiB - 1 byte
-const MS_PER_MINUTE = 60000;
-const FIXED_LFH_SIZE = 30;
-const FIXED_CDH_SIZE = 46;
+const MAX_UINT16 = 0xffff; // 64 KiB - 1 byte
+const MAX_UINT32 = 0xffffffff; // 4 GiB - 1 byte
+const FIXED_LFH_SIZE   = 30;
+const FIXED_CDH_SIZE   = 46;
 const FIXED_EOCDR_SIZE = 22;
 const VERSION_MADE_BY = 63; // v6.3 & MS-DOS
 const VERSION_STORE   = 10; // v1.0
@@ -24,17 +23,18 @@ const DRIVE_LETTER = /^[A-Za-z]:/;
 
 const deflateRawAsync = promisify(deflateRaw);
 
-function getLastMod({ lastModified: dateTime }) {
-  if (dateTime === undefined) {
-    return dosDateTimeFrom(Date.now());
-  } else if (Number.isInteger(dateTime)) {
-    if ((dateTime >= 0) && (dateTime <= MAX32)) {
-      return dateTime;
+function getLastMod({ lastModified: lastMod }) {
+  if (Number.isInteger(lastMod)) {
+    if ((lastMod >= 0) && (lastMod <= MAX_UINT32)) {
+      return lastMod;
     }
-  } else if (dateTime instanceof Date) {
-    const time = dateTime.getTime();
+  } else if (lastMod === undefined) {
+    const now = new Date();
+    return dosDateTimeFrom(now.getTime(), getOffsetMilliseconds(now));
+  } else if (lastMod instanceof Date) {
+    const time = lastMod.getTime();
     if (!Number.isNaN(time)) {
-      return dosDateTimeFrom(time, dateTime.getTimezoneOffset() * -MS_PER_MINUTE);
+      return dosDateTimeFrom(time, getOffsetMilliseconds(lastMod));
     }
   }
   throw new TypeError(
@@ -42,19 +42,12 @@ function getLastMod({ lastModified: dateTime }) {
   );
 }
 
-async function push(stream, chunk) {
-  await stream.drained;
-  if (stream.destroyed) return false;
-  if (!stream.push(chunk)) {
-    const { promise, resolve } = Promise.withResolvers();
-    stream.drained = promise;
-    stream.drain = resolve;
-  }
-  return true;
+function getOffsetMilliseconds(date) {
+  return date.getTimezoneOffset() * -60000;
 }
 
 function localFileHeaderFrom(entry) {
-  const { name, compressedSize, uncompressedSize } = entry;
+  const { name } = entry;
   const nameLength = name.byteLength;
   const header = Buffer.allocUnsafe(FIXED_LFH_SIZE + nameLength);
   header.writeUint32LE(0x04034b50      ,  0); // - local file header signature
@@ -64,8 +57,8 @@ function localFileHeaderFrom(entry) {
   header.writeUint32LE(entry.lastMod   , 10); // - last mod file time              2 bytes
                                               // - last mod file date              2 bytes
   header.writeUint32LE(entry.crc       , 14); // - crc-32
-  header.writeUint32LE(compressedSize  , 18); // - compressed size
-  header.writeUint32LE(uncompressedSize, 22); // - uncompressed size
+  header.writeUint32LE(entry.compSize  , 18); // - compressed size
+  header.writeUint32LE(entry.uncompSize, 22); // - uncompressed size
   header.writeUint16LE(nameLength      , 26); // - file name length
   header.writeUint16LE(0               , 28); // - extra field length
   header.set(name                      , 30); // - file name
@@ -73,7 +66,7 @@ function localFileHeaderFrom(entry) {
 }
 
 function centralDirHeaderFrom(entry) {
-  const { name, compressedSize, uncompressedSize } = entry;
+  const { name } = entry;
   const nameLength = name.byteLength;
   const header = Buffer.allocUnsafe(FIXED_CDH_SIZE + nameLength);
   header.writeUint32LE(0x02014b50      ,  0); // - central file header signature
@@ -84,8 +77,8 @@ function centralDirHeaderFrom(entry) {
   header.writeUint32LE(entry.lastMod   , 12); // - last mod file time              2 bytes
                                               // - last mod file date              2 bytes
   header.writeUint32LE(entry.crc       , 16); // - crc-32
-  header.writeUint32LE(compressedSize  , 20); // - compressed size
-  header.writeUint32LE(uncompressedSize, 24); // - uncompressed size
+  header.writeUint32LE(entry.compSize  , 20); // - compressed size
+  header.writeUint32LE(entry.uncompSize, 24); // - uncompressed size
   header.writeUint16LE(nameLength      , 28); // - file name length
   header.writeBigUint64LE(0n           , 30); // - extra field length              2 bytes
                                               // - file comment length             2 bytes
@@ -114,6 +107,17 @@ function endOfCentralDirRecordOf(stream) {
                                               //   the starting disk number
   record.writeUint16LE(0               , 20); // - .ZIP file comment length
   return record;
+}
+
+async function push(stream, chunk) {
+  await stream.drained;
+  if (stream.destroyed) return false;
+  if (!stream.push(chunk)) {
+    const { promise, resolve } = Promise.withResolvers();
+    stream.drained = promise;
+    stream.drain = resolve;
+  }
+  return true;
 }
 
 export class ZipStream extends Readable {
@@ -165,12 +169,13 @@ export class ZipStream extends Readable {
    * to the internal read buffer, or false if the stream is destroyed while processing.
    */
   async appendFile(name, data, options = {}) {
-    const { totalEntries } = this;
     if (this.destroyed) {
       throw new Error('Cannot call `appendFile()` after the stream has been destroyed');
     } else if (this.finalized) {
       throw new Error('Cannot add a file after calling `finalize()`');
-    } else if (totalEntries >= MAX16) {
+    }
+    const { totalEntries } = this;
+    if (totalEntries >= MAX_UINT16) {
       throw new RangeError('Cannot add a file: 65535 (0xFFFF) files have already been added');
     }
 
@@ -179,14 +184,15 @@ export class ZipStream extends Readable {
     } else if (!ArrayBuffer.isView(data)) {
       throw new TypeError('`data` must be a TypedArray/DataView instance');
     }
-
     const lastMod = getLastMod(options);
+    const { compress: shouldCompress = true } = options;
     const nameBytes = Buffer.from(this.validateFilename(name), 'utf-8');
     const nameLength = nameBytes.byteLength;
-    const uncompressedSize = data.byteLength;
-    if (nameLength > MAX16) {
+    if (nameLength > MAX_UINT16) {
       throw new RangeError('Filename length in UTF-8 bytes must be less than 64 KiB');
-    } else if (uncompressedSize > MAX32) {
+    }
+    const uncompSize = data.byteLength;
+    if (uncompSize > MAX_UINT32) {
       throw new RangeError('File size must be less than 4 GiB');
     }
 
@@ -196,23 +202,22 @@ export class ZipStream extends Readable {
     this.queue = queue.then(() => promise);
     this.totalEntries = totalEntries + 1;
 
-    let { compress = true } = options;
-    let compressedSize = uncompressedSize;
-    let crc = 0, byteOffset = 0, centralDirOffset = 0, centralDirSize = 0;
+    let crc = 0;
+    let compSize = uncompSize, didCompress = false;
+    let byteOffset = 0, centralDirOffset = 0, centralDirSize = 0;
     try {
       crc = crc32(data);
-      compress &&= (uncompressedSize > 0);
-      if (compress) {
-        const compressedData = await deflateRawAsync(data, options.zlib);
+      if (shouldCompress && (uncompSize > 0)) {
+        const compData = await deflateRawAsync(data, options.zlib);
         if (this.destroyed) {
           resolve();
           return false;
         }
-        const size = compressedData.byteLength;
-        compress = (size < uncompressedSize);
-        if (compress) {
-          data = compressedData;
-          compressedSize = size;
+        const size = compData.byteLength;
+        if (size < uncompSize) {
+          data = compData;
+          compSize = size;
+          didCompress = true;
         }
       }
       await queue;
@@ -221,13 +226,14 @@ export class ZipStream extends Readable {
         return false;
       }
       byteOffset = this.centralDirOffset;
-      centralDirOffset = byteOffset + FIXED_LFH_SIZE + nameLength + compressedSize;
-      centralDirSize = this.centralDirSize + FIXED_CDH_SIZE + nameLength;
-      if (centralDirOffset > MAX32) {
+      centralDirOffset = byteOffset + FIXED_LFH_SIZE + nameLength + compSize;
+      if (centralDirOffset > MAX_UINT32) {
         throw new RangeError(
           'Failed to add the file: the archive size before the central directory would reach or exceed 4 GiB'
         );
-      } else if (centralDirSize > MAX32) {
+      }
+      centralDirSize = this.centralDirSize + FIXED_CDH_SIZE + nameLength;
+      if (centralDirSize > MAX_UINT32) {
         throw new RangeError(
           'Failed to add the file: the central directory size would reach or exceed 4 GiB'
         );
@@ -240,29 +246,29 @@ export class ZipStream extends Readable {
 
     try {
       const entry = {
-        version: compress ? VERSION_DEFLATE : VERSION_STORE,
-        method: compress ? METHOD_DEFLATE : METHOD_STORE,
+        version: didCompress ? VERSION_DEFLATE : VERSION_STORE,
+        method: didCompress ? METHOD_DEFLATE : METHOD_STORE,
         lastMod,
         crc,
-        compressedSize,
-        uncompressedSize,
+        compSize,
+        uncompSize,
         byteOffset,
         name: nameBytes,
       };
       if (
         !(await push(this, localFileHeaderFrom(entry))) ||
-        ((compressedSize > 0) && !(await push(this, data)))
+        ((compSize > 0) && !(await push(this, data)))
       ) return false;
       this.entries.push(entry);
       this.centralDirOffset = centralDirOffset;
       this.centralDirSize = centralDirSize;
-      return true;
     } catch (error) {
       this.destroy(error);
       return false;
     } finally {
       resolve();
     }
+    return true;
   }
 
   /**
@@ -310,14 +316,14 @@ export class ZipStream extends Readable {
  */
 export function dosDateTimeFrom(
   epochMilliseconds,
-  offsetMilliseconds = new Date(epochMilliseconds).getTimezoneOffset() * -MS_PER_MINUTE
+  offsetMilliseconds = getOffsetMilliseconds(new Date(epochMilliseconds))
 ) {
   const date = new Date(epochMilliseconds + offsetMilliseconds);
-  const year = date.getUTCFullYear() - 1980;
-  if (year < 0)         return 0x00210000; // 1980-01-01T00:00:00
-  if (year > 0b1111111) return 0xff9fbf7d; // 2107-12-31T23:59:58
+  const year = date.getUTCFullYear();
+  if (year < 1980) return 0x00210000; // 1980-01-01T00:00:00
+  if (year > 2107) return 0xff9fbf7d; // 2107-12-31T23:59:58
   return ( // Do not use bitwise operators; they overflow.
-    (year * 2**25) +
+    ((year - 1980) * 2**25) +
     ((date.getUTCMonth() + 1) * 2**21) +
     (date.getUTCDate() * 2**16) +
     (date.getUTCHours() * 2**11) +
