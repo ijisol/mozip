@@ -5,6 +5,7 @@
   "keywords": ["zip", "archive", "compress", "async", "promise"],
   "repository": "https://github.com/ijisol/mozip",
   "license": "MIT",
+  "author": "Lee Jisol <ijisol@naver.com>",
   "type": "module",
   "exports": "./mozip.js",
   "engines": {

@@ -179,9 +179,11 @@ Used with the `options.lastModified` parameter of `ZipStream#appendFile()`. Usef
 
 Note: The sign of `Date#getTimezoneOffset()` is opposite to that of the UTC offset.
 
-## License
+## Copyright
 
-[MIT](LICENSE)
+Copyright (c) 2024 Lee Jisol \<ijisol@naver.com>
+
+Licensed under the [MIT License](LICENSE).
 
 ## Notes
 
