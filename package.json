@@ -1,6 +1,6 @@
 {
   "name": "mozip",
-  "version": "6.0.0",
+  "version": "6.0.1",
   "description": "Minimal, zero-dependency library for generating ZIP archives with Node.js streams and a Promise-based API",
   "keywords": ["zip", "archive", "compress", "async", "promise"],
   "repository": "https://github.com/ijisol/mozip",
